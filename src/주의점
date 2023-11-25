@@ -1,0 +1,8 @@
+1.Q파일은 절대 GIT에서 관리 X
+2.queryDSL에는 컴파일 타임에 에러 검출 가능
+3.from절에는 subQuery불가능
+   => join으로 변경
+   => 쿼리 분리
+   => native sql 사용
+   - 도서 : SQL AntiPatterns ,
+4. case문에서 바꾸는건 꼮 필요한 경우에만
