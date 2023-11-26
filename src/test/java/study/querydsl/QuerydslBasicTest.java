@@ -2,7 +2,9 @@ package study.querydsl;
 
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.Expression;
 import com.querydsl.core.types.dsl.CaseBuilder;
+import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
@@ -27,11 +29,10 @@ import static study.querydsl.entity.QTeam.team;
 @SpringBootTest
 @Transactional
 public class QuerydslBasicTest {
-    @Autowired
-    EntityManager em;
+    @Autowired EntityManager em;
 
     JPAQueryFactory query;
-    @BeforeEach
+    @BeforeEach //
     public void before() {
         query = new JPAQueryFactory(em);
         Team teamA = new Team("teamA");
@@ -57,23 +58,32 @@ public class QuerydslBasicTest {
 
     @Test
     public void startQueryDSL(){
-        List<Member> fetch = query
-                .select(member)
-                .from(member)
-                .where(member.age.between(10, 30),member.name.eq("member1")).fetch();
-        for (Member fetch1 : fetch) {
-            System.out.println(fetch1.getName());
+        em.persist(new Member(null,100));
+        List<String> fetch = query.select(member.name).from(member).groupBy(member.name).having(member.age.gt(10)).fetch();
+        for (String s : fetch) {
+            System.out.println(s);
         }
     }
 
     @Test
     public void resultFetch(){
-//        List<Member> fetch = query.selectFrom(member).fetch();
-//        Member fetchOne = query.selectFrom(member).fetchOne();
-//        Member fetchFirst = query.selectFrom(member).fetchFirst();
-//        QueryResults<Member> results = query.selectFrom(member).fetchResults();
-//        results.getTotal();
-        query.selectFrom(member).fetchCount();
+//        List<Member> fetch = query.selectFrom(member).fetch(); list
+//        Member fetchOne = query.selectFrom(member).fetchOne(); 단건 조회
+//        Member fetchFirst = query.selectFrom(member).fetchFirst(); //첫번째 값만 페이징해서 조회
+        QueryResults<Member> results = query.
+                selectFrom(member).
+                offset(1).
+                limit(5).
+                fetchResults();//페이징 정보포함 list
+        System.out.println(results.getOffset());
+        System.out.println(results.getLimit());
+        System.out.println(results.getTotal());
+        System.out.println(results.getResults().size());
+        List<Member> results1 = results.getResults();
+        for (Member member1 : results1) {
+            System.out.println(member1.getName());
+        }
+//        query.selectFrom(member).fetchCount();//count수 조회
     }
 
     @Test
@@ -81,7 +91,11 @@ public class QuerydslBasicTest {
         em.persist(new Member(null,100));
         em.persist(new Member("member5",100));
         em.persist(new Member("member6",100));
-        List<Member> fetch = query.selectFrom(member).where(member.age.eq(100)).orderBy(member.age.desc(),member.name.asc().nullsLast()).fetch();
+        List<Member> fetch = query.
+                selectFrom(member).
+                where(member.age.eq(100)).
+                orderBy(member.age.desc(),member.name.asc().nullsLast()). //desc 내림차순 ,asc 오름차순
+                fetch();
         Member member5 = fetch.get(0);
         Member member6 = fetch.get(1);
         Member memberNull = fetch.get(2);
@@ -172,13 +186,31 @@ public class QuerydslBasicTest {
     @Rollback(value = false)
     public void join_on_filtering() {
         //given
-        List<Tuple> teamA = query.select(member, team).from(member).leftJoin(member.team, team).on(team.name.eq("teamA")).fetch();
+        List<Tuple> teamA = query.
+                select(member, team).
+                from(member).
+                leftJoin(member.team, team)
+                .on(team.name.eq("teamA")).fetch();
         //when
         //then
         for (Tuple tuple : teamA) {
             System.out.println(tuple.get(member));
             System.out.println(tuple.get(team));
         }
+    }
+    @Test
+    public void join_on_no_relation() throws Exception{
+        //given
+        em.persist(new Member("teamA"));
+        em.persist(new Member("teamB"));
+        List<Tuple> fetch = query.select(member, team).from(member).leftJoin(team).on(member.name.eq(team.name)).fetch();
+        //when
+        for (Tuple tuple : fetch) {
+            String name = tuple.get(member).getName();
+            Team team1 = tuple.get(team);
+            System.out.println(name+" "+team1);
+        }
+        //then
     }
     @Autowired
     EntityManagerFactory emf;
@@ -218,6 +250,7 @@ public class QuerydslBasicTest {
                         select(memberSub.age.max()).
                                 from(memberSub)))
                 .fetch();
+        //eq안에 member들의 나이의 최대값이 들어감
         assertThat(fetch).extracting("age").containsExactly(40);
         //when
         //then
@@ -232,6 +265,7 @@ public class QuerydslBasicTest {
                                 .from(memberSub)
                 )).fetch();
         //when
+        //goe안에 member들의 나이의 평균이 들어감
         assertThat(fetch).extracting("age").containsExactly(30,40);
         //then
     }
@@ -244,6 +278,7 @@ public class QuerydslBasicTest {
                                 .from(memberSub)
                                 .where(memberSub.age.gt(10))
                 )).fetch();
+        //in안에 나이가 10살 이상인 member들의 나이가 들어감
         assertThat(fetch).extracting("age").containsExactly(20,30,40);
     }
     @Test
@@ -290,6 +325,31 @@ public class QuerydslBasicTest {
                 .fetch();
         //when
         for (String s : 기타) {
+            System.out.println(s);
+        }
+        //then
+    }
+    @Test
+    public void constant() throws Exception{
+        //given
+        List<Tuple> a = query.select(member.name, Expressions.constant("A"))
+                .from(member)
+                .fetch();
+        //when
+        for (Tuple tuple : a) {
+            System.out.println(tuple);
+        }
+        //then
+    }
+    @Test
+    @Rollback(value = false)
+    public void concat() throws Exception{
+        //given
+        List<String> fetch = query.select(member.name.concat("_").concat(member.age.stringValue()))
+                .from(member)
+                .fetch();
+        //when
+        for (String s : fetch) {
             System.out.println(s);
         }
         //then
